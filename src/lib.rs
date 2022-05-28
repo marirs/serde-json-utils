@@ -8,6 +8,52 @@ pub enum Error {
 
 type Result<T> = std::result::Result<T, Error>;
 
+#[derive(PartialEq, Debug)]
+struct HashValue<'a>(pub &'a serde_json::Value);
+
+impl Eq for HashValue<'_> {}
+
+impl std::hash::Hash for HashValue<'_> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        use serde_json::Value::*;
+        use std::hash::Hasher;
+        match self.0 {
+            Null => state.write_u32(3_221_225_473), // chosen randomly
+            Bool(ref b) => b.hash(state),
+            Number(ref n) => {
+                if let Some(x) = n.as_u64() {
+                    x.hash(state);
+                } else if let Some(x) = n.as_i64() {
+                    x.hash(state);
+                } else if let Some(x) = n.as_f64() {
+                    // `f64` does not implement `Hash`. However, floats in JSON are guaranteed to be
+                    // finite, so we can use the `Hash` implementation in the `ordered-float` crate.
+                    ordered_float::NotNan::new(x).unwrap().hash(state);
+                }
+            }
+            String(ref s) => s.hash(state),
+            Array(ref v) => {
+                for x in v {
+                    HashValue(x).hash(state);
+                }
+            }
+            Object(ref map) => {
+                let mut hash = 0;
+                for (k, v) in map {
+                    // We have no way of building a new hasher of type `H`, so we
+                    // hardcode using the default hasher of a hash map.
+                    let mut item_hasher = std::collections::hash_map::DefaultHasher::new();
+                    k.hash(&mut item_hasher);
+                    HashValue(v).hash(&mut item_hasher);
+                    hash ^= item_hasher.finish();
+                }
+                state.write_u64(hash);
+            }
+        }
+    }
+}
+
+
 pub fn filter_nulls(val: &mut serde_json::Value) -> Result<bool>{
     match val{
         serde_json::Value::Null => {return Ok(true);}
@@ -18,7 +64,17 @@ pub fn filter_nulls(val: &mut serde_json::Value) -> Result<bool>{
             if a.is_empty(){
                 return Ok(true);
             }
-            for v in a{
+            let mut vv = std::collections::HashSet::new();
+            let mut candidates = vec![];
+            for (i, v) in a.iter().enumerate(){
+                if !vv.insert(HashValue(v)){
+                    candidates.push(i);
+                }
+            }
+            for i in candidates{
+                a.remove(i);
+            }
+            for v in a.iter_mut(){
                 filter_nulls(v)?;
             }
         }
@@ -93,14 +149,220 @@ mod tests {
 }
 "###;
 
+        let test_str3 = r###"[
+{
+"adversary": "",
+"category": "Malware",
+"description": "Some time ago, researchers discovered an interesting campaign distributing malicious documents. Which used the download chain as well as legitimate payload hosting services.",
+"domain": "zyzkikpfewuf.ru",
+"submission_time": "2022-05-27 08:50:17 UTC",
+"intel": "Threat",
+"ip_address": "162.33.179.235",
+"killchain": "Delivery",
+"malware_families": [
+"Arkei"
+
+],
+"md5": "1e9311c594d49feba530c3ce815dfd2d",
+"sha256": "b9a1ac0335226386029bb3b6f9f3b9114bde55c7ea9f4fdcdccc02593208bdfd",
+"source": "alienvault",
+"indicator": "url",
+"tlp": "white",
+"url": "http://zyzkikpfewuf.ru/XpqA02Df.exe",
+"threat_type": "Tandem Espionage"
+
+},
+{
+"adversary": "",
+"category": "Malware",
+"description": "Some time ago, researchers discovered an interesting campaign distributing malicious documents. Which used the download chain as well as legitimate payload hosting services.",
+"domain": "zyzkikpfewuf.ru",
+"submission_time": "2022-05-27 08:50:17 UTC",
+"intel": "Threat",
+"ip_address": "162.33.179.235",
+"killchain": "Delivery",
+"malware_families": [
+"Arkei"
+
+],
+"md5": "1e9311c594d49feba530c3ce815dfd2d",
+"sha256": "b9a1ac0335226386029bb3b6f9f3b9114bde55c7ea9f4fdcdccc02593208bdfd",
+"source": "alienvault",
+"indicator": "url",
+"tlp": "white",
+"url": "http://zyzkikpfewuf.ru/eSttPnHsmB.exe",
+"threat_type": "Tandem Espionage"
+
+},
+{
+"adversary": "",
+"category": "Malware",
+"description": "Some time ago, researchers discovered an interesting campaign distributing malicious documents. Which used the download chain as well as legitimate payload hosting services.",
+"domain": "zyzkikpfewuf.ru",
+"submission_time": "2022-05-27 08:50:17 UTC",
+"intel": "Threat",
+"ip_address": "162.33.179.235",
+"killchain": "Delivery",
+"malware_families": [
+"Arkei"
+
+],
+"md5": "1e9311c594d49feba530c3ce815dfd2d",
+"sha256": "b9a1ac0335226386029bb3b6f9f3b9114bde55c7ea9f4fdcdccc02593208bdfd",
+"source": "alienvault",
+"indicator": "url",
+"tlp": "white",
+"url": "http://zyzkikpfewuf.ru/esttpnhsmb.exe",
+"threat_type": "Tandem Espionage"
+
+},
+{
+"adversary": "",
+"category": "Malware",
+"description": "Some time ago, researchers discovered an interesting campaign distributing malicious documents. Which used the download chain as well as legitimate payload hosting services.",
+"domain": "zyzkikpfewuf.ru",
+"submission_time": "2022-05-27 08:50:17 UTC",
+"intel": "Threat",
+"ip_address": "162.33.179.235",
+"killchain": "Delivery",
+"malware_families": [
+"Arkei"
+
+],
+"md5": "1e9311c594d49feba530c3ce815dfd2d",
+"sha256": "b9a1ac0335226386029bb3b6f9f3b9114bde55c7ea9f4fdcdccc02593208bdfd",
+"source": "alienvault",
+"indicator": "url",
+"tlp": "white",
+"url": "http://zyzkikpfewuf.ru/hour84a6d9k.dotm",
+"threat_type": "Tandem Espionage"
+
+},
+{
+"adversary": "",
+"category": "Malware",
+"description": "Some time ago, researchers discovered an interesting campaign distributing malicious documents. Which used the download chain as well as legitimate payload hosting services.",
+"domain": "zyzkikpfewuf.ru",
+"submission_time": "2022-05-27 08:50:17 UTC",
+"intel": "Threat",
+"ip_address": "162.33.179.235",
+"killchain": "Delivery",
+"malware_families": [
+"Arkei"
+
+],
+"md5": "1e9311c594d49feba530c3ce815dfd2d",
+"sha256": "b9a1ac0335226386029bb3b6f9f3b9114bde55c7ea9f4fdcdccc02593208bdfd",
+"source": "alienvault",
+"indicator": "url",
+"tlp": "white",
+"url": "http://zyzkikpfewuf.ru/hour84a6d9k.exe",
+"threat_type": "Tandem Espionage"
+
+},
+{
+"adversary": "",
+"category": "Malware",
+"description": "Some time ago, researchers discovered an interesting campaign distributing malicious documents. Which used the download chain as well as legitimate payload hosting services.",
+"domain": "zyzkikpfewuf.ru",
+"submission_time": "2022-05-27 08:50:17 UTC",
+"intel": "Threat",
+"ip_address": "162.33.179.235",
+"killchain": "Delivery",
+"malware_families": [
+"Arkei"
+
+],
+"md5": "1e9311c594d49feba530c3ce815dfd2d",
+"sha256": "b9a1ac0335226386029bb3b6f9f3b9114bde55c7ea9f4fdcdccc02593208bdfd",
+"source": "alienvault",
+"indicator": "url",
+"tlp": "white",
+"url": "http://zyzkikpfewuf.ru/xpqa02df.exe",
+"threat_type": "Tandem Espionage"
+
+},
+{
+"adversary": "",
+"category": "Malware",
+"description": "Some time ago, researchers discovered an interesting campaign distributing malicious documents. Which used the download chain as well as legitimate payload hosting services.",
+"domain": "zyzkikpfewuf.ru",
+"submission_time": "2022-05-27 08:50:17 UTC",
+"intel": "Threat",
+"ip_address": "162.33.179.235",
+"killchain": "C2 Communication",
+"malware_families": [
+"Arkei"
+
+],
+"md5": "1e9311c594d49feba530c3ce815dfd2d",
+"sha256": "b9a1ac0335226386029bb3b6f9f3b9114bde55c7ea9f4fdcdccc02593208bdfd",
+"source": "alienvault",
+"indicator": "domain",
+"tlp": "white",
+"url": "https://rwwmefkauiaa.ru/",
+"threat_type": "Tandem Espionage"
+
+},
+{
+"adversary": "",
+"category": "Malware",
+"description": "Some time ago, researchers discovered an interesting campaign distributing malicious documents. Which used the download chain as well as legitimate payload hosting services.",
+"domain": "zyzkikpfewuf.ru",
+"submission_time": "2022-05-27 08:50:17 UTC",
+"intel": "Threat",
+"ip_address": "162.33.179.235",
+"killchain": "Installation",
+"malware_families": [
+"Arkei"
+
+],
+"md5": "8e967ff97e36388934c5b2e7d63d714e",
+"sha256": "b9a1ac0335226386029bb3b6f9f3b9114bde55c7ea9f4fdcdccc02593208bdfd",
+"source": "alienvault",
+"indicator": "filehash",
+"tlp": "white",
+"url": "https://rwwmefkauiaa.ru/",
+"threat_type": "Tandem Espionage"
+
+},
+{
+"adversary": "",
+"category": "Malware",
+"description": "Some time ago, researchers discovered an interesting campaign distributing malicious documents. Which used the download chain as well as legitimate payload hosting services.",
+"domain": "zyzkikpfewuf.ru",
+"submission_time": "2022-05-27 08:50:17 UTC",
+"intel": "Threat",
+"ip_address": "162.33.179.235",
+"killchain": "Installation",
+"malware_families": [
+"Arkei"
+
+],
+"md5": "8e967ff97e36388934c5b2e7d63d714e",
+"sha256": "b9a1ac0335226386029bb3b6f9f3b9114bde55c7ea9f4fdcdccc02593208bdfd",
+"source": "alienvault",
+"indicator": "filehash",
+"tlp": "white",
+"url": "https://rwwmefkauiaa.ru/",
+"threat_type": "Tandem Espionage"
+
+}
+
+]"###;
+
         let mut val1: serde_json::Value = serde_json::from_str(test_str).unwrap();
         let mut val2: serde_json::Value = serde_json::from_str(test_str2).unwrap();
+        let mut val3: serde_json::Value = serde_json::from_str(test_str3).unwrap();
 
         super::filter_nulls(&mut val1).unwrap();
         println!("{:#?}", val1);
 
         super::filter_nulls(&mut val2).unwrap();
         println!("{:#?}", val2);
+
+        super::filter_nulls(&mut val3).unwrap();
+        println!("{:#?}", val3);
     }
 
 }
