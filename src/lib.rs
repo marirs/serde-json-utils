@@ -8,19 +8,34 @@ pub enum Error {
 
 type Result<T> = std::result::Result<T, Error>;
 
-#[derive(PartialEq, Debug)]
-struct HashValue<'a>(pub &'a serde_json::Value);
+#[derive(Debug)]
+struct HashValue(pub serde_json::Value);
 
-impl Eq for HashValue<'_> {}
+impl Eq for HashValue {}
 
-impl std::hash::Hash for HashValue<'_> {
+impl std::cmp::PartialEq for HashValue {
+    fn eq(&self, other: &Self) -> bool{
+        match (&self.0, &other.0){
+            (serde_json::Value::Null, serde_json::Value::Null) => true,
+            (serde_json::Value::Bool(b1), serde_json::Value::Bool(b2)) => b1 == b2,
+            (serde_json::Value::Number(b1), serde_json::Value::Number(b2)) => b1 == b2,
+            (serde_json::Value::String(b1), serde_json::Value::String(b2)) => b1 == b2,
+            (serde_json::Value::Array(b1), serde_json::Value::Array(b2)) => b1 == b2,
+            (serde_json::Value::Object(b1), serde_json::Value::Object(b2)) => {
+                b1.keys().collect::<Vec<&String>>() == b2.keys().collect::<Vec<&String>>()
+            }
+            _ => false
+        }
+    }
+}
+
+
+impl std::hash::Hash for HashValue {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        use serde_json::Value::*;
-        use std::hash::Hasher;
         match self.0 {
-            Null => state.write_u32(3_221_225_473), // chosen randomly
-            Bool(ref b) => b.hash(state),
-            Number(ref n) => {
+            serde_json::Value::Null => state.write_u32(3_221_225_473), // chosen randomly
+            serde_json::Value::Bool(ref b) => b.hash(state),
+            serde_json::Value::Number(ref n) => {
                 if let Some(x) = n.as_u64() {
                     x.hash(state);
                 } else if let Some(x) = n.as_i64() {
@@ -31,28 +46,66 @@ impl std::hash::Hash for HashValue<'_> {
                     ordered_float::NotNan::new(x).unwrap().hash(state);
                 }
             }
-            String(ref s) => s.hash(state),
-            Array(ref v) => {
+            serde_json::Value::String(ref s) => s.to_lowercase().hash(state),
+            serde_json::Value::Array(ref v) => {
                 for x in v {
-                    HashValue(x).hash(state);
+                    HashValue(x.clone()).hash(state);
                 }
             }
-            Object(ref map) => {
-                let mut hash = 0;
-                for (k, v) in map {
+            serde_json::Value::Object(ref map) => {
+                //let mut hash = 0;
+                //let mut item_hasher =
+                //std::collections::hash_map::DefaultHasher::new();
+                for (k, _v) in map {
                     // We have no way of building a new hasher of type `H`, so we
                     // hardcode using the default hasher of a hash map.
-                    let mut item_hasher = std::collections::hash_map::DefaultHasher::new();
-                    k.hash(&mut item_hasher);
-                    HashValue(v).hash(&mut item_hasher);
-                    hash ^= item_hasher.finish();
+                    k.hash(state);
+                    //HashValue(v).hash(&mut item_hasher);
                 }
-                state.write_u64(hash);
+                //let hh = item_hasher.finish();
+                //state.write_u64(hh);
             }
         }
     }
 }
 
+fn merge(p: &HashValue, v: &serde_json::Value) -> Result<serde_json::Value>{
+    assert_eq!(p, &HashValue(v.clone()));
+    match (&p.0, v){
+        (serde_json::Value::Null, serde_json::Value::Null) => Ok(serde_json::Value::Null),
+        (serde_json::Value::Bool(_), serde_json::Value::Bool(b)) => Ok(serde_json::Value::Bool(b.clone())),
+        (serde_json::Value::Number(_), serde_json::Value::Number(b)) => Ok(serde_json::Value::Number(b.clone())),
+        (serde_json::Value::String(_), serde_json::Value::String(b)) => Ok(serde_json::Value::String(b.clone())),
+        (serde_json::Value::Array(_), serde_json::Value::Array(b)) => Ok(serde_json::Value::Array(b.clone())),
+        (serde_json::Value::Object(a), serde_json::Value::Object(b)) => {
+            let mut res = serde_json::Map::new();
+            for (k, v) in a{
+                let bv = b.get(k).unwrap();
+                if let (serde_json::Value::Array(_arr1), serde_json::Value::Array(_arr2)) = (v, bv){
+                    if v == bv{
+                        res.insert(k.clone(), v.clone());
+                    } else {
+                        res.insert(k.clone(), serde_json::Value::Array(vec![v.clone(), bv.clone()]));
+                    }
+                } else if let (serde_json::Value::Array(arr1), _) = (v, bv){
+                    let mut aaa = arr1.clone();
+                    if !aaa.contains(bv){
+                        aaa.push(bv.clone());
+                    }
+                    res.insert(k.clone(), serde_json::Value::Array(aaa));
+                } else {
+                    if v == bv{
+                        res.insert(k.clone(), v.clone());
+                    } else {
+                        res.insert(k.clone(), serde_json::Value::Array(vec![v.clone(), bv.clone()]));
+                    }
+                }
+            }
+            Ok(serde_json::Value::Object(res))
+        }
+        _ => unreachable!()
+    }
+}
 
 pub fn filter_nulls(val: &mut serde_json::Value) -> Result<bool>{
     match val{
@@ -64,19 +117,16 @@ pub fn filter_nulls(val: &mut serde_json::Value) -> Result<bool>{
             if a.is_empty(){
                 return Ok(true);
             }
-            let mut vv = std::collections::HashSet::new();
-            let mut candidates = vec![];
-            for (i, v) in a.iter().enumerate(){
-                if !vv.insert(HashValue(v)){
-                    candidates.push(i);
+            let mut vv: std::collections::HashSet<HashValue> = std::collections::HashSet::new();
+            for v in a.iter(){
+                if let Some(prev_v) = vv.take(&HashValue(v.clone())){
+                    vv.insert(HashValue(merge(&prev_v, v)?));
+                }else {
+                    vv.insert(HashValue(v.clone()));
                 }
             }
-            for i in candidates{
-                a.remove(i);
-            }
-            for v in a.iter_mut(){
-                filter_nulls(v)?;
-            }
+            a.clear();
+            a.extend(vv.iter().map(|v| v.0.clone()).collect::<Vec<serde_json::Value>>());
         }
         serde_json::Value::Object(o) => {
             if o.is_empty(){
