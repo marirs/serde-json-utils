@@ -29,7 +29,6 @@ impl std::cmp::PartialEq for HashValue {
     }
 }
 
-
 impl std::hash::Hash for HashValue {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self.0 {
@@ -53,17 +52,9 @@ impl std::hash::Hash for HashValue {
                 }
             }
             serde_json::Value::Object(ref map) => {
-                //let mut hash = 0;
-                //let mut item_hasher =
-                //std::collections::hash_map::DefaultHasher::new();
                 for (k, _v) in map {
-                    // We have no way of building a new hasher of type `H`, so we
-                    // hardcode using the default hasher of a hash map.
                     k.hash(state);
-                    //HashValue(v).hash(&mut item_hasher);
                 }
-                //let hh = item_hasher.finish();
-                //state.write_u64(hh);
             }
         }
     }
