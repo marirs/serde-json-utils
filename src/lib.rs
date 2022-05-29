@@ -1,40 +1,19 @@
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    #[error("{0}")]
-    Io(#[from] std::io::Error),
-    #[error("{0}")]
-    Json(#[from] serde_json::Error),
-}
+use ordered_float::NotNan;
+use serde_json::Value::{self, *};
+use std::hash::{Hash, Hasher};
 
-type Result<T> = std::result::Result<T, Error>;
+#[derive(Debug, PartialEq)]
+struct DedupeHashValue<'a>(pub &'a serde_json::Value);
 
-#[derive(Debug)]
-struct HashValue(pub serde_json::Value);
+impl Eq for DedupeHashValue<'_> {}
 
-impl Eq for HashValue {}
-
-impl std::cmp::PartialEq for HashValue {
-    fn eq(&self, other: &Self) -> bool{
-        match (&self.0, &other.0){
-            (serde_json::Value::Null, serde_json::Value::Null) => true,
-            (serde_json::Value::Bool(b1), serde_json::Value::Bool(b2)) => b1 == b2,
-            (serde_json::Value::Number(b1), serde_json::Value::Number(b2)) => b1 == b2,
-            (serde_json::Value::String(b1), serde_json::Value::String(b2)) => b1 == b2,
-            (serde_json::Value::Array(b1), serde_json::Value::Array(b2)) => b1 == b2,
-            (serde_json::Value::Object(b1), serde_json::Value::Object(b2)) => {
-                b1.keys().collect::<Vec<&String>>() == b2.keys().collect::<Vec<&String>>()
-            }
-            _ => false
-        }
-    }
-}
-
-impl std::hash::Hash for HashValue {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+impl Hash for DedupeHashValue<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
         match self.0 {
-            serde_json::Value::Null => state.write_u32(3_221_225_473), // chosen randomly
-            serde_json::Value::Bool(ref b) => b.hash(state),
-            serde_json::Value::Number(ref n) => {
+            Null => state.write_u32(3_221_225_473), // chosen randomly
+            Bool(ref b) => b.hash(state),
+            Number(ref n) => {
+                "number".hash(state);
                 if let Some(x) = n.as_u64() {
                     x.hash(state);
                 } else if let Some(x) = n.as_i64() {
@@ -42,16 +21,72 @@ impl std::hash::Hash for HashValue {
                 } else if let Some(x) = n.as_f64() {
                     // `f64` does not implement `Hash`. However, floats in JSON are guaranteed to be
                     // finite, so we can use the `Hash` implementation in the `ordered-float` crate.
-                    ordered_float::NotNan::new(x).unwrap().hash(state);
+                    NotNan::new(x).unwrap().hash(state);
                 }
             }
-            serde_json::Value::String(ref s) => s.to_lowercase().hash(state),
-            serde_json::Value::Array(ref v) => {
+            String(ref s) => s.to_lowercase().hash(state),
+            Array(ref v) => {
+                "array".hash(state);
                 for x in v {
-                    HashValue(x.clone()).hash(state);
+                    HashValue(x).hash(state);
                 }
             }
-            serde_json::Value::Object(ref map) => {
+            Object(ref map) => {
+                "map".hash(state);
+                for (k, v) in map {
+                    k.hash(state);
+                    DedupeHashValue(v).hash(state);
+                }
+            }
+        }
+    }
+}
+
+
+#[derive(Debug)]
+struct HashValue<'a>(pub &'a serde_json::Value);
+
+impl Eq for HashValue<'_> {}
+
+impl std::cmp::PartialEq for HashValue<'_> {
+    fn eq(&self, other: &Self) -> bool{
+        match (&self.0, &other.0){
+            (Null, Null) => true,
+            (Bool(b1), Bool(b2)) => b1 == b2,
+            (Number(b1), Number(b2)) => b1 == b2,
+            (String(b1), String(b2)) => b1 == b2,
+            (Array(b1), Array(b2)) => b1 == b2,
+            (Object(b1), Object(b2)) => {
+                b1.keys().collect::<Vec<&std::string::String>>() == b2.keys().collect::<Vec<&std::string::String>>()
+            }
+            _ => false
+        }
+    }
+}
+
+impl Hash for HashValue<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self.0 {
+            Null => state.write_u32(3_221_225_473), // chosen randomly
+            Bool(ref b) => b.hash(state),
+            Number(ref n) => {
+                if let Some(x) = n.as_u64() {
+                    x.hash(state);
+                } else if let Some(x) = n.as_i64() {
+                    x.hash(state);
+                } else if let Some(x) = n.as_f64() {
+                    // `f64` does not implement `Hash`. However, floats in JSON are guaranteed to be
+                    // finite, so we can use the `Hash` implementation in the `ordered-float` crate.
+                    NotNan::new(x).unwrap().hash(state);
+                }
+            }
+            String(ref s) => s.to_lowercase().hash(state),
+            Array(ref v) => {
+                for x in v {
+                    HashValue(x).hash(state);
+                }
+            }
+            Object(ref map) => {
                 for (k, _v) in map {
                     k.hash(state);
                 }
@@ -60,73 +95,68 @@ impl std::hash::Hash for HashValue {
     }
 }
 
-fn merge(p: &HashValue, v: &serde_json::Value) -> Result<serde_json::Value>{
-    assert_eq!(p, &HashValue(v.clone()));
-    match (&p.0, v){
-        (serde_json::Value::Null, serde_json::Value::Null) => Ok(serde_json::Value::Null),
-        (serde_json::Value::Bool(_), serde_json::Value::Bool(b)) => Ok(serde_json::Value::Bool(b.clone())),
-        (serde_json::Value::Number(_), serde_json::Value::Number(b)) => Ok(serde_json::Value::Number(b.clone())),
-        (serde_json::Value::String(_), serde_json::Value::String(b)) => Ok(serde_json::Value::String(b.clone())),
-        (serde_json::Value::Array(_), serde_json::Value::Array(b)) => Ok(serde_json::Value::Array(b.clone())),
-        (serde_json::Value::Object(a), serde_json::Value::Object(b)) => {
+pub fn merge(p: &Value, v: &Value) -> Value{
+    match (p, v){
+        (Object(a), Object(b)) => {
+            if HashValue(p) != HashValue(v){
+                return Array(vec![p.clone(), v.clone()]);
+            }
             let mut res = serde_json::Map::new();
             for (k, v) in a{
                 let bv = b.get(k).unwrap();
-                if let (serde_json::Value::Array(_arr1), serde_json::Value::Array(_arr2)) = (v, bv){
+                if let (Array(_arr1), Array(_arr2)) = (v, bv){
                     if v == bv{
                         res.insert(k.clone(), v.clone());
                     } else {
-                        res.insert(k.clone(), serde_json::Value::Array(vec![v.clone(), bv.clone()]));
+                        res.insert(k.clone(), Array(vec![v.clone(), bv.clone()]));
                     }
-                } else if let (serde_json::Value::Array(arr1), _) = (v, bv){
+                } else if let (Array(arr1), _) = (v, bv){
                     let mut aaa = arr1.clone();
                     if !aaa.contains(bv){
                         aaa.push(bv.clone());
                     }
-                    res.insert(k.clone(), serde_json::Value::Array(aaa));
+                    res.insert(k.clone(), Array(aaa));
                 } else {
                     if v == bv{
                         res.insert(k.clone(), v.clone());
                     } else {
-                        res.insert(k.clone(), serde_json::Value::Array(vec![v.clone(), bv.clone()]));
+                        res.insert(k.clone(), Array(vec![v.clone(), bv.clone()]));
                     }
                 }
             }
-            Ok(serde_json::Value::Object(res))
+            Object(res)
         }
-        _ => unreachable!()
+        _ => Array(vec![p.clone(), v.clone()])
     }
 }
 
-pub fn filter_nulls(val: &mut serde_json::Value) -> Result<bool>{
+fn _skip_nulls(val: &mut Value, with_empties: bool) -> bool{
     match val{
-        serde_json::Value::Null => {return Ok(true);}
-        serde_json::Value::Bool(_) => {}
-        serde_json::Value::Number(_) => {}
-        serde_json::Value::String(_) => {}
-        serde_json::Value::Array(a) => {
-            if a.is_empty(){
-                return Ok(true);
+        Null => {return true;}
+        Bool(_) => {}
+        Number(_) => {}
+        String(_) => {}
+        Array(a) => {
+            if with_empties && a.is_empty(){
+                return true;
             }
-            let mut vv: std::collections::HashSet<HashValue> = std::collections::HashSet::new();
-            for v in a.iter(){
-                if let Some(prev_v) = vv.take(&HashValue(v.clone())){
-                    vv.insert(HashValue(merge(&prev_v, v)?));
-                }else {
-                    vv.insert(HashValue(v.clone()));
+            let mut candidates = vec![];
+            for v in &mut a.clone(){
+                if !_skip_nulls(v, with_empties){
+                    candidates.push(v.clone());
                 }
             }
             a.clear();
-            a.extend(vv.iter().map(|v| v.0.clone()).collect::<Vec<serde_json::Value>>());
+            a.extend(candidates);
         }
-        serde_json::Value::Object(o) => {
-            if o.is_empty(){
-                return Ok(true);
+        Object(o) => {
+            if with_empties && o.is_empty(){
+                return true;
             }
             let mut candidates = vec![];
             for (k, v) in o.iter_mut() {
-                if filter_nulls(v)?{
-                    candidates.push(k.to_string());
+                if _skip_nulls(v, with_empties){
+                    candidates.push(k.clone());
                 }
             }
             for c in candidates{
@@ -134,276 +164,183 @@ pub fn filter_nulls(val: &mut serde_json::Value) -> Result<bool>{
             }
         }
     }
-    Ok(false)
+    false
+}
+
+pub fn skip_null(val: &mut Value){
+    _skip_nulls(val, false);
+}
+
+pub fn skip_null_and_empty(val: &mut Value){
+    _skip_nulls(val, true);
+}
+
+pub fn deduplicate(val: &mut Value){
+    match val{
+        Null => {}
+        Bool(_) => {}
+        Number(_) => {}
+        String(_) => {}
+        Array(a) => {
+            let mut aa = a.clone();
+            for v in &mut aa {
+                deduplicate(v);
+            }
+            let mut set = std::collections::HashSet::new();
+            let mut candidates = vec![];
+            for v in &aa{
+                if !set.contains(&DedupeHashValue(&v)){
+                    set.insert(DedupeHashValue(&v));
+                    candidates.push(v.clone());
+                }
+            }
+            a.clear();
+            a.extend(candidates);
+        }
+        Object(o) => {
+            for (_, v) in o.iter_mut() {
+                deduplicate(v);
+            }
+        }
+    }
 }
 
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+        const DATA: &str = r###"
+    [
+        {
+            "key1": null,
+            "key2": "there is a value",
+            "key3": {},
+            "key4": [],
+            "key5": [1, 2, 3, 3]
+
+},
+        {
+            "key1": "value in here",
+            "key2": null
+
+},
+        {
+            "key1": "value in here",
+            "key2": null
+
+}
+
+]
+    "###;
+
+        const RESULT_SKIP_NULL: &str = r###"
+    [
+        {
+            "key2": "there is a value",
+            "key3": {},
+            "key4": [],
+            "key5": [1, 2, 3, 3]
+
+},
+        {
+            "key1": "value in here"
+
+},
+        {
+            "key1": "value in here"
+
+}
+]
+    "###;
+
+        const RESULT_SKIP_NULL_AND_EMPTY: &str = r###"
+    [
+        {
+            "key2": "there is a value",
+            "key5": [1, 2, 3, 3]
+
+},
+        {
+            "key1": "value in here"
+
+},
+        {
+            "key1": "value in here"
+
+}
+
+]
+    "###;
+
+        const RESULT_SKIP_NULL_AND_EMPTY_AND_DEDUPLICATE: &str = r###"
+    [
+        {
+            "key2": "there is a value",
+            "key5": [1, 2, 3]
+
+},
+        {
+            "key1": "value in here"
+
+}
+]
+    "###;
+
+    const MERGE_SRC1: &str = r###"
+        {
+            "key1": "value in here",
+            "key2": null}"###;
+
+    const MERGE_SRC2: &str = r###"
+        {
+            "key1": "value in here",
+            "key2": "asas"}"###;
+
+    const MERGE_RES1: &str = r###"
+        {
+            "key1": "value in here",
+            "key2": [null, "asas"]}"###;
+
+
     #[test]
-    fn test() {
-        let test_str = r###"{
-"adversary": "Double Guns",
-"category": "Malware",
-"description": "Recently, our DNS data based threat monitoring system DNSmon flagged a suspicious domain pro.csocools.com. The system estimates the scale of infection may well above hundreds of thousands of users. By analyzing the related samples and C2s,\n\nWe traced its family back to the ShuangQiang (double gun) campaign, in the past, this campaign has been exposed by multiple security vendors, but it has revived and come back with new methods and great force.",
-"domain": null,
-"indicator": "New activity of DoubleGuns Group, control hundreds of thousands of bots via public cloud service",
-"industries": null,
-"intel": "Threat",
-"ip_address": null,
-"killchain": "Installation",
-"malware_families": [
-"Sakula - S0074",
-"Double-Gun"
+    fn test_skip_null() {
+        let mut val: Value = serde_json::from_str(DATA).unwrap();
+        let result: Value = serde_json::from_str(RESULT_SKIP_NULL).unwrap();
+        skip_null(&mut val);
+        assert_eq!(result, val)
 
-],
-"md5": null,
-"sha256": "c323d49f16e6ad3a8f3f1ca78249385d703db2e33722476424ac3536f7043748",
-"targeted_countries": [],
-"threat_type": "filehash",
-"tlp": "white",
-"url": null,
-"submission_time": "2020-05-26 17:45:35 UTC"
-
-}
-"###;
-
-        let test_str2 = r###"{
-"adversary": "Double Guns",
-"category": "Malware",
-"description": "Recently, our DNS data based threat monitoring system DNSmon flagged a suspicious domain pro.csocools.com. The system estimates the scale of infection may well above hundreds of thousands of users. By analyzing the related samples and C2s,\n\nWe traced its family back to the ShuangQiang (double gun) campaign, in the past, this campaign has been exposed by multiple security vendors, but it has revived and come back with new methods and great force.",
-"submission_time": "2020-05-26 17:45:35 UTC",
-"indicator": "New activity of DoubleGuns Group, control hundreds of thousands of bots via public cloud service",
-"targeted_countries": {},
-"targeted_countriess": [],
-"intel": "Threat",
-"tlp": "white",
-"killchain": "Installation",
-"malware_families": [
-"Sakula - S0074",
-"Double-Gun"
-
-],
-"threat_type": "filehash",
-"sha256": "c323d49f16e6ad3a8f3f1ca78249385d703db2e33722476424ac3536f7043748"
-
-}
-"###;
-
-        let test_str3 = r###"[
-{
-"adversary": "",
-"category": "Malware",
-"description": "Some time ago, researchers discovered an interesting campaign distributing malicious documents. Which used the download chain as well as legitimate payload hosting services.",
-"domain": "zyzkikpfewuf.ru",
-"submission_time": "2022-05-27 08:50:17 UTC",
-"intel": "Threat",
-"ip_address": "162.33.179.235",
-"killchain": "Delivery",
-"malware_families": [
-"Arkei"
-
-],
-"md5": "1e9311c594d49feba530c3ce815dfd2d",
-"sha256": "b9a1ac0335226386029bb3b6f9f3b9114bde55c7ea9f4fdcdccc02593208bdfd",
-"source": "alienvault",
-"indicator": "url",
-"tlp": "white",
-"url": "http://zyzkikpfewuf.ru/XpqA02Df.exe",
-"threat_type": "Tandem Espionage"
-
-},
-{
-"adversary": "",
-"category": "Malware",
-"description": "Some time ago, researchers discovered an interesting campaign distributing malicious documents. Which used the download chain as well as legitimate payload hosting services.",
-"domain": "zyzkikpfewuf.ru",
-"submission_time": "2022-05-27 08:50:17 UTC",
-"intel": "Threat",
-"ip_address": "162.33.179.235",
-"killchain": "Delivery",
-"malware_families": [
-"Arkei"
-
-],
-"md5": "1e9311c594d49feba530c3ce815dfd2d",
-"sha256": "b9a1ac0335226386029bb3b6f9f3b9114bde55c7ea9f4fdcdccc02593208bdfd",
-"source": "alienvault",
-"indicator": "url",
-"tlp": "white",
-"url": "http://zyzkikpfewuf.ru/eSttPnHsmB.exe",
-"threat_type": "Tandem Espionage"
-
-},
-{
-"adversary": "",
-"category": "Malware",
-"description": "Some time ago, researchers discovered an interesting campaign distributing malicious documents. Which used the download chain as well as legitimate payload hosting services.",
-"domain": "zyzkikpfewuf.ru",
-"submission_time": "2022-05-27 08:50:17 UTC",
-"intel": "Threat",
-"ip_address": "162.33.179.235",
-"killchain": "Delivery",
-"malware_families": [
-"Arkei"
-
-],
-"md5": "1e9311c594d49feba530c3ce815dfd2d",
-"sha256": "b9a1ac0335226386029bb3b6f9f3b9114bde55c7ea9f4fdcdccc02593208bdfd",
-"source": "alienvault",
-"indicator": "url",
-"tlp": "white",
-"url": "http://zyzkikpfewuf.ru/esttpnhsmb.exe",
-"threat_type": "Tandem Espionage"
-
-},
-{
-"adversary": "",
-"category": "Malware",
-"description": "Some time ago, researchers discovered an interesting campaign distributing malicious documents. Which used the download chain as well as legitimate payload hosting services.",
-"domain": "zyzkikpfewuf.ru",
-"submission_time": "2022-05-27 08:50:17 UTC",
-"intel": "Threat",
-"ip_address": "162.33.179.235",
-"killchain": "Delivery",
-"malware_families": [
-"Arkei"
-
-],
-"md5": "1e9311c594d49feba530c3ce815dfd2d",
-"sha256": "b9a1ac0335226386029bb3b6f9f3b9114bde55c7ea9f4fdcdccc02593208bdfd",
-"source": "alienvault",
-"indicator": "url",
-"tlp": "white",
-"url": "http://zyzkikpfewuf.ru/hour84a6d9k.dotm",
-"threat_type": "Tandem Espionage"
-
-},
-{
-"adversary": "",
-"category": "Malware",
-"description": "Some time ago, researchers discovered an interesting campaign distributing malicious documents. Which used the download chain as well as legitimate payload hosting services.",
-"domain": "zyzkikpfewuf.ru",
-"submission_time": "2022-05-27 08:50:17 UTC",
-"intel": "Threat",
-"ip_address": "162.33.179.235",
-"killchain": "Delivery",
-"malware_families": [
-"Arkei"
-
-],
-"md5": "1e9311c594d49feba530c3ce815dfd2d",
-"sha256": "b9a1ac0335226386029bb3b6f9f3b9114bde55c7ea9f4fdcdccc02593208bdfd",
-"source": "alienvault",
-"indicator": "url",
-"tlp": "white",
-"url": "http://zyzkikpfewuf.ru/hour84a6d9k.exe",
-"threat_type": "Tandem Espionage"
-
-},
-{
-"adversary": "",
-"category": "Malware",
-"description": "Some time ago, researchers discovered an interesting campaign distributing malicious documents. Which used the download chain as well as legitimate payload hosting services.",
-"domain": "zyzkikpfewuf.ru",
-"submission_time": "2022-05-27 08:50:17 UTC",
-"intel": "Threat",
-"ip_address": "162.33.179.235",
-"killchain": "Delivery",
-"malware_families": [
-"Arkei"
-
-],
-"md5": "1e9311c594d49feba530c3ce815dfd2d",
-"sha256": "b9a1ac0335226386029bb3b6f9f3b9114bde55c7ea9f4fdcdccc02593208bdfd",
-"source": "alienvault",
-"indicator": "url",
-"tlp": "white",
-"url": "http://zyzkikpfewuf.ru/xpqa02df.exe",
-"threat_type": "Tandem Espionage"
-
-},
-{
-"adversary": "",
-"category": "Malware",
-"description": "Some time ago, researchers discovered an interesting campaign distributing malicious documents. Which used the download chain as well as legitimate payload hosting services.",
-"domain": "zyzkikpfewuf.ru",
-"submission_time": "2022-05-27 08:50:17 UTC",
-"intel": "Threat",
-"ip_address": "162.33.179.235",
-"killchain": "C2 Communication",
-"malware_families": [
-"Arkei"
-
-],
-"md5": "1e9311c594d49feba530c3ce815dfd2d",
-"sha256": "b9a1ac0335226386029bb3b6f9f3b9114bde55c7ea9f4fdcdccc02593208bdfd",
-"source": "alienvault",
-"indicator": "domain",
-"tlp": "white",
-"url": "https://rwwmefkauiaa.ru/",
-"threat_type": "Tandem Espionage"
-
-},
-{
-"adversary": "",
-"category": "Malware",
-"description": "Some time ago, researchers discovered an interesting campaign distributing malicious documents. Which used the download chain as well as legitimate payload hosting services.",
-"domain": "zyzkikpfewuf.ru",
-"submission_time": "2022-05-27 08:50:17 UTC",
-"intel": "Threat",
-"ip_address": "162.33.179.235",
-"killchain": "Installation",
-"malware_families": [
-"Arkei"
-
-],
-"md5": "8e967ff97e36388934c5b2e7d63d714e",
-"sha256": "b9a1ac0335226386029bb3b6f9f3b9114bde55c7ea9f4fdcdccc02593208bdfd",
-"source": "alienvault",
-"indicator": "filehash",
-"tlp": "white",
-"url": "https://rwwmefkauiaa.ru/",
-"threat_type": "Tandem Espionage"
-
-},
-{
-"adversary": "",
-"category": "Malware",
-"description": "Some time ago, researchers discovered an interesting campaign distributing malicious documents. Which used the download chain as well as legitimate payload hosting services.",
-"domain": "zyzkikpfewuf.ru",
-"submission_time": "2022-05-27 08:50:17 UTC",
-"intel": "Threat",
-"ip_address": "162.33.179.235",
-"killchain": "Installation",
-"malware_families": [
-"Arkei"
-
-],
-"md5": "8e967ff97e36388934c5b2e7d63d714e",
-"sha256": "b9a1ac0335226386029bb3b6f9f3b9114bde55c7ea9f4fdcdccc02593208bdfd",
-"source": "alienvault",
-"indicator": "filehash",
-"tlp": "white",
-"url": "https://rwwmefkauiaa.ru/",
-"threat_type": "Tandem Espionage"
-
-}
-
-]"###;
-
-        let mut val1: serde_json::Value = serde_json::from_str(test_str).unwrap();
-        let mut val2: serde_json::Value = serde_json::from_str(test_str2).unwrap();
-        let mut val3: serde_json::Value = serde_json::from_str(test_str3).unwrap();
-
-        super::filter_nulls(&mut val1).unwrap();
-        println!("{:#?}", val1);
-
-        super::filter_nulls(&mut val2).unwrap();
-        println!("{:#?}", val2);
-
-        super::filter_nulls(&mut val3).unwrap();
-        println!("{:#?}", val3);
     }
 
+    #[test]
+    fn test_skip_null_and_empty() {
+        let mut val: Value = serde_json::from_str(DATA).unwrap();
+        let result: Value = serde_json::from_str(RESULT_SKIP_NULL_AND_EMPTY).unwrap();
+        skip_null_and_empty(&mut val);
+        assert_eq!(result, val)
+
+    }
+
+    #[test]
+    fn test_skip_null_and_empty_and_deduplicate() {
+        let mut val: Value = serde_json::from_str(DATA).unwrap();
+        let result: Value = serde_json::from_str(RESULT_SKIP_NULL_AND_EMPTY_AND_DEDUPLICATE).unwrap();
+        skip_null_and_empty(&mut val);
+        deduplicate(&mut val);
+        assert_eq!(result, val)
+
+    }
+
+
+    #[test]
+    fn test_merge() {
+        let src1: Value = serde_json::from_str(MERGE_SRC1).unwrap();
+        let src2: Value = serde_json::from_str(MERGE_SRC2).unwrap();
+        let src11: Value = serde_json::from_str(MERGE_SRC1).unwrap();
+        let ress1: Value = serde_json::from_str(MERGE_RES1).unwrap();
+        let res1 = merge(&src1, &src11);
+        assert_eq!(res1, src1);
+        let res2 = merge(&src1, &src2);
+        assert_eq!(res2, ress1);
+    }
 }
