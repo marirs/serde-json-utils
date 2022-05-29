@@ -1,0 +1,13 @@
+[package]
+name = "serde-json-utils"
+version = "0.0.1"
+author = ["Marirs <marirs@gmail.com>", "Andrey Mnatsakanov <andrey@3ig.kiev.ua>"]
+description = "Util crate for serde_json"
+rust-version = "1.56"
+license = "MIT OR Apache-2.0"
+edition = "2021"
+
+[dependencies]
+ordered-float = "1"
+serde_json = "1"
+thiserror = "1"
