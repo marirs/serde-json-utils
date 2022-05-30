@@ -12,7 +12,7 @@ Utility functions for serde_json::Value.
 ### Usage
 ```toml
 [dependencies]
-serde-json-utils = "0.1.0"
+serde-json-utils = "0.2.0"
 ```
 
 ### Example
