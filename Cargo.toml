@@ -1,6 +1,6 @@
 [package]
-name = "serde-json-utils"
-version = "0.1.0"
+name = "serde_json_utils"
+version = "0.2.0"
 author = ["Marirs <marirs@gmail.com>", "Andrey Mnatsakanov <andrey@3ig.kiev.ua>"]
 description = "Util crate for serde_json Value"
 rust-version = "1.56"
