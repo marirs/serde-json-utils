@@ -82,7 +82,7 @@ pub fn dedup(val: &mut Value) {
 pub fn merge_similar_objects(p: &Value, v: &Value) -> Result<Value, ()> {
     match (p, v) {
         (Object(a), Object(b)) => {
-            if HashValue(p) != HashValue(v) {
+            if HashValue(p.clone()) != HashValue(v.clone()) {
                 return Err(());
             }
             let mut res = serde_json::Map::new();
@@ -112,28 +112,32 @@ pub fn merge_similar_objects(p: &Value, v: &Value) -> Result<Value, ()> {
     }
 }
 
-pub fn merge_simmilar(v:  &Value) -> Option<Value>{
+pub fn merge_simmilar(v: &mut Value){
     match v {
         Array(arr) => {
-            let mut res = std::collections::HashSet::new();
-            for v in arr{
-                if let Some(s) = res.take(&HashValue(v)){
-                    if let Ok(m) = merge_similar_objects(s.0, v){
-                        res.insert(m);
+            let mut res: std::collections::HashSet<HashValue> = std::collections::HashSet::new();
+            let aarr = arr.clone();
+            for v in aarr{
+                if let Some(s) = res.take(&HashValue(v.clone())){
+                    if let Ok(m) = merge_similar_objects(&s.0, &v){
+                        res.insert(HashValue(m));
                     } else {
-                        res.insert(s.0);
-                        res.insert(v);
+                        res.insert(s);
+                        res.insert(HashValue(v.clone()));
                     }
+                } else {
+                    res.insert(HashValue(v.clone()));
                 }
             }
-            Some(Array(res.into_iter().map(|s| s.0).collect()))
+            arr.clear();
+            arr.extend(res.into_iter().map(|s| s.0).collect::<Vec<Value>>());
         }
         Object(obj) => {
-            for (k, v) in obj{
+            for (_k, v) in obj{
                 merge_simmilar(v);
             }
         }
-        _ => None
+        _ => {}
     }
 }
 

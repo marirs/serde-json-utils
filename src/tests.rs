@@ -103,6 +103,55 @@ const MERGE_RES1: &str = r###"
         }
         "###;
 
+const MERGE_SRC3: &str = r###"[
+        {
+            "key1": "value in here",
+            "key2": "asas"
+        },
+        {
+            "key1": "value in here",
+            "key2": "asas"
+        }]
+        "###;
+
+const MERGE_RES3: &str = r###"[
+        {
+            "key1": "value in here",
+            "key2": "asas"
+        }]
+        "###;
+
+const MERGE_SRC4: &str = r###"[
+        {
+            "key1": "value in here",
+            "key2": "asas1"
+        },
+        {
+            "key1": "value in here",
+            "key2": "asas2"
+        }]
+        "###;
+
+const MERGE_RES4: &str = r###"[
+        {
+            "key1": "value in here",
+            "key2": ["asas1", "asas2"]
+        }]
+        "###;
+
+const MERGE_SRC5: &str = r###"[
+        {
+            "key1": "value in here",
+            "key2": "asas1",
+            "key3": "value3"
+        },
+        {
+            "key1": "value in here",
+            "key2": "asas2"
+        }]
+        "###;
+
+
 #[test]
 fn test_skip_null() {
     let mut val: Value = from_str(DATA).unwrap();
@@ -137,13 +186,31 @@ fn test_skip_null_and_empty_and_dedup() {
 }
 
 #[test]
-fn test_merge() {
+fn test_merge_simmilar_objects() {
     let src1: Value = from_str(MERGE_SRC1).unwrap();
     let src2: Value = from_str(MERGE_SRC2).unwrap();
     let src11: Value = from_str(MERGE_SRC1).unwrap();
     let ress1: Value = from_str(MERGE_RES1).unwrap();
-    let res1 = merge_similar(&src1, &src11);
+    let res1 = merge_similar_objects(&src1, &src11).unwrap();
     assert_eq!(res1, src1);
-    let res2 = merge_similar(&src1, &src2);
+    let res2 = merge_similar_objects(&src1, &src2).unwrap();
     assert_eq!(res2, ress1);
+}
+
+#[test]
+fn test_merge_simmilar(){
+    let mut src1: Value = from_str(MERGE_SRC3).unwrap();
+    let res1: Value = from_str(MERGE_RES3).unwrap();
+    merge_simmilar(&mut src1);
+    assert_eq!(res1, src1);
+
+    let mut src1: Value = from_str(MERGE_SRC4).unwrap();
+    let res1: Value = from_str(MERGE_RES4).unwrap();
+    merge_simmilar(&mut src1);
+    assert_eq!(res1, src1);
+
+    let mut src1: Value = from_str(MERGE_SRC5).unwrap();
+    let res1: Value = from_str(MERGE_SRC5).unwrap();
+    merge_simmilar(&mut src1);
+    assert_eq!(res1, src1);
 }

@@ -28,7 +28,7 @@ impl Hash for DedupeHashValue<'_> {
             Array(ref v) => {
                 "array".hash(state);
                 for x in v {
-                    HashValue(x).hash(state);
+                    HashValue(x.clone()).hash(state);
                 }
             }
             Object(ref map) => {
@@ -43,11 +43,11 @@ impl Hash for DedupeHashValue<'_> {
 }
 
 #[derive(Debug)]
-pub(crate) struct HashValue<'a>(pub &'a Value);
+pub(crate) struct HashValue(pub Value);
 
-impl Eq for HashValue<'_> {}
+impl Eq for HashValue {}
 
-impl std::cmp::PartialEq for HashValue<'_> {
+impl std::cmp::PartialEq for HashValue {
     fn eq(&self, other: &Self) -> bool {
         match (&self.0, &other.0) {
             (Null, Null) => true,
@@ -64,7 +64,7 @@ impl std::cmp::PartialEq for HashValue<'_> {
     }
 }
 
-impl Hash for HashValue<'_> {
+impl Hash for HashValue {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self.0 {
             Null => state.write_u32(3_221_225_473), // chosen randomly
@@ -83,7 +83,7 @@ impl Hash for HashValue<'_> {
             String(ref s) => s.to_lowercase().hash(state),
             Array(ref v) => {
                 for x in v {
-                    HashValue(x).hash(state);
+                    HashValue(x.clone()).hash(state);
                 }
             }
             Object(ref map) => {
