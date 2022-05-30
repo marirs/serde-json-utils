@@ -79,11 +79,11 @@ pub fn dedup(val: &mut Value) {
     }
 }
 
-pub fn merge_similar(p: &Value, v: &Value) -> Value {
+pub fn merge_similar_objects(p: &Value, v: &Value) -> Result<Value, ()> {
     match (p, v) {
         (Object(a), Object(b)) => {
             if HashValue(p) != HashValue(v) {
-                return Array(vec![p.clone(), v.clone()]);
+                return Err(());
             }
             let mut res = serde_json::Map::new();
             for (k, v) in a {
@@ -106,11 +106,37 @@ pub fn merge_similar(p: &Value, v: &Value) -> Value {
                     res.insert(k.clone(), Array(vec![v.clone(), bv.clone()]));
                 }
             }
-            Object(res)
+            Ok(Object(res))
         }
-        _ => Array(vec![p.clone(), v.clone()]),
+        _ => return Err(()),
     }
 }
+
+pub fn merge_simmilar(v:  &Value) -> Option<Value>{
+    match v {
+        Array(arr) => {
+            let mut res = std::collections::HashSet::new();
+            for v in arr{
+                if let Some(s) = res.take(&HashValue(v)){
+                    if let Ok(m) = merge_similar_objects(s.0, v){
+                        res.insert(m);
+                    } else {
+                        res.insert(s.0);
+                        res.insert(v);
+                    }
+                }
+            }
+            Some(Array(res.into_iter().map(|s| s.0).collect()))
+        }
+        Object(obj) => {
+            for (k, v) in obj{
+                merge_simmilar(v);
+            }
+        }
+        _ => None
+    }
+}
+
 
 /// Remove `Null` value fields & `empty` value fields from serde_json::Value
 fn remove_nulls(val: &mut Value, with_empties: bool) -> bool {
