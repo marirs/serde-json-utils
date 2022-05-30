@@ -1,4 +1,8 @@
 # serde_json_utils
+[![Linux Arm7](https://github.com/marirs/serde-json-utils/actions/workflows/linux_arm.yml/badge.svg)](https://github.com/marirs/serde-json-utils/actions/workflows/linux_arm.yml)
+[![Linux x86_64](https://github.com/marirs/serde-json-utils/actions/workflows/linux_x86_64.yml/badge.svg)](https://github.com/marirs/serde-json-utils/actions/workflows/linux_x86_64.yml)
+[![macOS intel](https://github.com/marirs/serde-json-utils/actions/workflows/macos_x86_64.yml/badge.svg)](https://github.com/marirs/serde-json-utils/actions/workflows/macos_x86_64.yml)
+[![Windows](https://github.com/marirs/serde-json-utils/actions/workflows/windows.yml/badge.svg)](https://github.com/marirs/serde-json-utils/actions/workflows/windows.yml)
 
 Utility functions for serde_json::Value.
 
