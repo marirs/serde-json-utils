@@ -79,40 +79,8 @@ pub fn dedup(val: &mut Value) {
     }
 }
 
-pub fn merge_similar_objects(p: &Value, v: &Value) -> Result<Value, ()> {
-    match (p, v) {
-        (Object(a), Object(b)) => {
-            if HashValue(p.clone()) != HashValue(v.clone()) {
-                return Err(());
-            }
-            let mut res = serde_json::Map::new();
-            for (k, v) in a {
-                let bv = b.get(k).unwrap();
-                if let (Array(_arr1), Array(_arr2)) = (v, bv) {
-                    if v.eq(bv) {
-                        res.insert(k.clone(), v.clone());
-                    } else {
-                        res.insert(k.clone(), Array(vec![v.clone(), bv.clone()]));
-                    }
-                } else if let (Array(arr1), _) = (v, bv) {
-                    let mut aaa = arr1.clone();
-                    if !aaa.contains(bv) {
-                        aaa.push(bv.clone());
-                    }
-                    res.insert(k.clone(), Array(aaa));
-                } else if v.eq(bv) {
-                        res.insert(k.clone(), v.clone());
-                } else {
-                    res.insert(k.clone(), Array(vec![v.clone(), bv.clone()]));
-                }
-            }
-            Ok(Object(res))
-        }
-        _ => return Err(()),
-    }
-}
 
-pub fn merge_simmilar(v: &mut Value){
+pub fn merge_similar(v: &mut Value){
     match v {
         Array(arr) => {
             let mut res: std::collections::HashSet<HashValue> = std::collections::HashSet::new();
@@ -134,7 +102,7 @@ pub fn merge_simmilar(v: &mut Value){
         }
         Object(obj) => {
             for (_k, v) in obj{
-                merge_simmilar(v);
+                merge_similar(v);
             }
         }
         _ => {}
@@ -181,3 +149,38 @@ fn remove_nulls(val: &mut Value, with_empties: bool) -> bool {
     }
     false
 }
+
+/// merge similar objects
+fn merge_similar_objects(p: &Value, v: &Value) -> Result<Value, ()> {
+    match (p, v) {
+        (Object(a), Object(b)) => {
+            if HashValue(p.clone()) != HashValue(v.clone()) {
+                return Err(());
+            }
+            let mut res = serde_json::Map::new();
+            for (k, v) in a {
+                let bv = b.get(k).unwrap();
+                if let (Array(_arr1), Array(_arr2)) = (v, bv) {
+                    if v.eq(bv) {
+                        res.insert(k.clone(), v.clone());
+                    } else {
+                        res.insert(k.clone(), Array(vec![v.clone(), bv.clone()]));
+                    }
+                } else if let (Array(arr1), _) = (v, bv) {
+                    let mut aaa = arr1.clone();
+                    if !aaa.contains(bv) {
+                        aaa.push(bv.clone());
+                    }
+                    res.insert(k.clone(), Array(aaa));
+                } else if v.eq(bv) {
+                    res.insert(k.clone(), v.clone());
+                } else {
+                    res.insert(k.clone(), Array(vec![v.clone(), bv.clone()]));
+                }
+            }
+            Ok(Object(res))
+        }
+        _ => return Err(()),
+    }
+}
+
