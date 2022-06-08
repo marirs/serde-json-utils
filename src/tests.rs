@@ -1,5 +1,5 @@
-use crate::*;
 use serde_json::{from_str, Value};
+use crate::{JsonUtils, merge_similar_objects};
 
 const DATA: &str = r###"
     [
@@ -139,24 +139,24 @@ const MERGE_RES4: &str = r###"[
         }]
         "###;
 
-const MERGE_SRC5: &str = r###"[
-        {
-            "key1": "value in here",
-            "key2": "asas1",
-            "key3": "value3"
-        },
-        {
-            "key1": "value in here",
-            "key2": "asas2"
-        }]
-        "###;
+// const MERGE_SRC5: &str = r###"[
+//         {
+//             "key1": "value in here",
+//             "key2": "asas1",
+//             "key3": "value3"
+//         },
+//         {
+//             "key1": "value in here",
+//             "key2": "asas2"
+//         }]
+//         "###;
 
 
 #[test]
 fn test_skip_null() {
     let mut val: Value = from_str(DATA).unwrap();
     let result: Value = from_str(RESULT_SKIP_NULL).unwrap();
-    skip_null(&mut val);
+    val.skip_null();
     assert_eq!(result, val)
 }
 
@@ -164,7 +164,7 @@ fn test_skip_null() {
 fn test_skip_null_and_empty() {
     let mut val: Value = from_str(DATA).unwrap();
     let result: Value = from_str(RESULT_SKIP_NULL_AND_EMPTY).unwrap();
-    skip_null_and_empty(&mut val);
+    val.skip_null_and_empty();
     assert_eq!(result, val)
 }
 
@@ -172,7 +172,7 @@ fn test_skip_null_and_empty() {
 fn test_dedup() {
     let mut val: Value = from_str(DATA).unwrap();
     let result: Value = from_str(RESULT_DEDUP).unwrap();
-    dedup(&mut val);
+    val.dedup();
     assert_eq!(result, val)
 }
 
@@ -180,8 +180,8 @@ fn test_dedup() {
 fn test_skip_null_and_empty_and_dedup() {
     let mut val: Value = from_str(DATA).unwrap();
     let result: Value = from_str(RESULT_SKIP_NULL_AND_EMPTY_AND_DEDUPLICATE).unwrap();
-    skip_null_and_empty(&mut val);
-    dedup(&mut val);
+    val.skip_null_and_empty();
+    val.dedup();
     assert_eq!(result, val)
 }
 
@@ -201,12 +201,12 @@ fn test_merge_similar_objects() {
 fn test_merge_similar(){
     let mut src1: Value = from_str(MERGE_SRC3).unwrap();
     let res1: Value = from_str(MERGE_RES3).unwrap();
-    merge_similar(&mut src1);
+    src1.merge_similar();
     assert_eq!(res1, src1);
 
     let mut src1: Value = from_str(MERGE_SRC4).unwrap();
     let res1: Value = from_str(MERGE_RES4).unwrap();
-    merge_similar(&mut src1);
+    src1.merge_similar();
     assert_eq!(res1, src1);
 
     // let mut src1: Value = from_str(MERGE_SRC5).unwrap();

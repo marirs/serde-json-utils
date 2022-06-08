@@ -4,7 +4,7 @@
 [![macOS intel](https://github.com/marirs/serde-json-utils/actions/workflows/macos_x86_64.yml/badge.svg)](https://github.com/marirs/serde-json-utils/actions/workflows/macos_x86_64.yml)
 [![Windows](https://github.com/marirs/serde-json-utils/actions/workflows/windows.yml/badge.svg)](https://github.com/marirs/serde-json-utils/actions/workflows/windows.yml)
 
-Utility functions for serde_json::Value.
+Utility functions for `serde_json::Value`. The functions are implemented as traits so all you need is to add the crate to your dependencies in your `Cargo.toml`. 
 
 ### Requirements
 - Rust 1.56+
@@ -12,14 +12,12 @@ Utility functions for serde_json::Value.
 ### Usage
 ```toml
 [dependencies]
-serde-json-utils = "0.2.0"
+serde-json-utils = "0.2.1"
 ```
 
 ### Example
 - To skip null & empty entries from serde_json::Value
 ```rust
-use serde_json_utils::skip_null_and_empty;
-
 const DATA: &str = r###"
     [
         {
@@ -42,7 +40,7 @@ const DATA: &str = r###"
 
 fn main() {
     let mut val: Value = from_str(DATA).unwrap();
-    skip_null_and_empty(&mut val);
+    val.skip_null_and_empty();
     
     println!("{:#?}", val);
 }
