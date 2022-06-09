@@ -5,6 +5,9 @@ author = ["Marirs <marirs@gmail.com>", "Andrey Mnatsakanov <andrey@3ig.kiev.ua>"
 description = "Util crate for serde_json Value"
 rust-version = "1.56"
 license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/marirs/serde-json-utils"
+homepage = "https://github.com/marirs/serde-json-utils"
 edition = "2021"
 
 [dependencies]

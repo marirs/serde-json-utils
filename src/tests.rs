@@ -1,5 +1,5 @@
+use crate::{merge_similar_objects, JsonUtils};
 use serde_json::{from_str, Value};
-use crate::{JsonUtils, merge_similar_objects};
 
 const DATA: &str = r###"
     [
@@ -139,19 +139,6 @@ const MERGE_RES4: &str = r###"[
         }]
         "###;
 
-// const MERGE_SRC5: &str = r###"[
-//         {
-//             "key1": "value in here",
-//             "key2": "asas1",
-//             "key3": "value3"
-//         },
-//         {
-//             "key1": "value in here",
-//             "key2": "asas2"
-//         }]
-//         "###;
-
-
 #[test]
 fn test_skip_null() {
     let mut val: Value = from_str(DATA).unwrap();
@@ -198,7 +185,7 @@ fn test_merge_similar_objects() {
 }
 
 #[test]
-fn test_merge_similar(){
+fn test_merge_similar() {
     let mut src1: Value = from_str(MERGE_SRC3).unwrap();
     let res1: Value = from_str(MERGE_RES3).unwrap();
     src1.merge_similar();
@@ -208,9 +195,4 @@ fn test_merge_similar(){
     let res1: Value = from_str(MERGE_RES4).unwrap();
     src1.merge_similar();
     assert_eq!(res1, src1);
-
-    // let mut src1: Value = from_str(MERGE_SRC5).unwrap();
-    // let res1: Value = from_str(MERGE_SRC5).unwrap();
-    // merge_similar(&mut src1);
-    // assert_eq!(res1, src1);
 }

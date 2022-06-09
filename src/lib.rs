@@ -1,24 +1,58 @@
 use crate::utils::{DedupeHashValue, HashValue};
 use serde_json::Value::{self, *};
+use std::collections::HashSet;
 
 #[cfg(test)]
 mod tests;
 mod utils;
 
 pub trait JsonUtils {
+    /// Remove `Null` value fields from serde_json::Value
+    /// ## Example
+    /// ```rust
+    /// use serde_json::{Value, from_str};
+    /// use serde_json_utils::{JsonUtils};
+    ///
+    /// let mut x: Value = from_str(r###"{"key1": null, "key2": "foo"}"###).unwrap();
+    /// let x_result: Value = from_str(r###"{"key2": "foo"}"###).unwrap();
+    ///
+    /// x.skip_null();
+    /// assert_eq!(x, x_result);
+    /// ```
     fn skip_null(&mut self);
-    
+
+    /// Remove `Null` value fields & `empty` value fields from serde_json::Value
+    /// ## Example
+    /// ```rust
+    /// use serde_json::{Value, from_str};
+    /// use serde_json_utils::{JsonUtils};
+    ///
+    /// let mut x: Value = from_str(r###"{"key1": null, "key2": "foo", "key3": [], "key4": {}}"###).unwrap();
+    /// let x_result: Value = from_str(r###"{"key2": "foo"}"###).unwrap();
+    ///
+    /// x.skip_null_and_empty();
+    /// assert_eq!(x, x_result);
+    /// ```
     fn skip_null_and_empty(&mut self);
-    
+
+    /// `Dedup` array of json's from serde_json::Value
+    /// ## Example
+    /// ```rust
+    /// use serde_json::{Value, from_str};
+    /// use serde_json_utils::{JsonUtils};
+    ///
+    /// let mut x: Value = from_str(r###"[{"key1": "foo", "key2": "bar", "key3": [1, 1, 2]}, {"key1": "foo", "key2": "bar", "key3": [1, 1, 2]}]"###).unwrap();
+    /// let x_result: Value = from_str(r###"[{"key1": "foo", "key2": "bar", "key3": [1, 2]}]"###).unwrap();
+    ///
+    /// x.dedup();
+    /// assert_eq!(x, x_result);
+    /// ```
     fn dedup(&mut self);
-    
+
     fn merge_similar(&mut self);
 }
 
-
-
 impl JsonUtils for Value {
-
     /// Remove `Null` value fields from serde_json::Value
     /// ## Example
     /// ```rust
@@ -74,7 +108,7 @@ impl JsonUtils for Value {
                 for v in &mut aa {
                     v.dedup();
                 }
-                let mut set = std::collections::HashSet::new();
+                let mut set = HashSet::new();
                 let mut candidates = vec![];
                 for v in &aa {
                     if !set.contains(&DedupeHashValue(v)) {
@@ -93,15 +127,14 @@ impl JsonUtils for Value {
         }
     }
 
-
-    fn merge_similar(&mut self){
+    fn merge_similar(&mut self) {
         match self {
             Array(arr) => {
-                let mut res: std::collections::HashSet<HashValue> = std::collections::HashSet::new();
+                let mut res: HashSet<HashValue> = HashSet::new();
                 let aarr = arr.clone();
-                for v in aarr{
-                    if let Some(s) = res.take(&HashValue(v.clone())){
-                        if let Ok(m) = merge_similar_objects(&s.0, &v){
+                for v in aarr {
+                    if let Some(s) = res.take(&HashValue(v.clone())) {
+                        if let Ok(m) = merge_similar_objects(&s.0, &v) {
                             res.insert(HashValue(m));
                         } else {
                             res.insert(s);
@@ -115,20 +148,17 @@ impl JsonUtils for Value {
                 arr.extend(res.into_iter().map(|s| s.0).collect::<Vec<Value>>());
             }
             Object(obj) => {
-                for (_k, v) in obj{
+                for (_k, v) in obj {
                     v.merge_similar();
                 }
             }
             _ => {}
         }
     }
-    
 }
 
-
-
 /// Remove `Null` value fields & `empty` value fields from serde_json::Value
-pub fn remove_nulls(val: &mut Value, with_empties: bool) -> bool {
+fn remove_nulls(val: &mut Value, with_empties: bool) -> bool {
     match val {
         Null => {
             return true;
@@ -168,7 +198,7 @@ pub fn remove_nulls(val: &mut Value, with_empties: bool) -> bool {
 }
 
 /// merge similar objects
-pub fn merge_similar_objects(p: &Value, v: &Value) -> Result<Value, ()> {
+fn merge_similar_objects(p: &Value, v: &Value) -> Result<Value, ()> {
     match (p, v) {
         (Object(a), Object(b)) => {
             if HashValue(p.clone()) != HashValue(v.clone()) {
@@ -197,7 +227,6 @@ pub fn merge_similar_objects(p: &Value, v: &Value) -> Result<Value, ()> {
             }
             Ok(Object(res))
         }
-        _ => return Err(()),
+        _ => Err(()),
     }
 }
-
