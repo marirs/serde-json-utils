@@ -1,6 +1,9 @@
 use ordered_float::NotNan;
 use serde_json::Value::{self, *};
-use std::{hash::{Hash, Hasher}, string::String};
+use std::{
+    hash::{Hash, Hasher},
+    string::String,
+};
 
 #[derive(Debug, PartialEq)]
 pub(crate) struct DedupeHashValue<'a>(pub &'a Value);
@@ -56,8 +59,7 @@ impl std::cmp::PartialEq for HashValue {
             (String(b1), String(b2)) => b1 == b2,
             (Array(b1), Array(b2)) => b1 == b2,
             (Object(b1), Object(b2)) => {
-                b1.keys().collect::<Vec<&String>>()
-                    == b2.keys().collect::<Vec<&String>>()
+                b1.keys().collect::<Vec<&String>>() == b2.keys().collect::<Vec<&String>>()
             }
             _ => false,
         }
