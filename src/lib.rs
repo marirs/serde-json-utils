@@ -1,5 +1,6 @@
 use crate::utils::{DedupeHashValue, HashValue};
 use serde_json::Value::{self, *};
+use serde::de::DeserializeOwned;
 
 #[cfg(test)]
 mod tests;
@@ -13,8 +14,11 @@ pub trait JsonUtils {
     fn dedup(&mut self);
     
     fn merge_similar(&mut self);
+    
+    fn to_struct<T: DeserializeOwned>(self) -> Option<T>;
+    
+    fn extend(&mut self, value: Value);
 }
-
 
 
 impl JsonUtils for Value {
@@ -92,8 +96,7 @@ impl JsonUtils for Value {
             }
         }
     }
-
-
+    
     fn merge_similar(&mut self){
         match self {
             Array(arr) => {
@@ -122,7 +125,76 @@ impl JsonUtils for Value {
             _ => {}
         }
     }
-    
+
+    /// Converts a Value to a Struct of the provided type. The provided struct must implement the `serde::Deserialize` trait.
+    /// ## Usage
+    /// ```rust
+    /// use serde_json::{json, Value};
+    /// use serde_json_utils::JsonUtils;
+    /// use serde::{Deserialize, Serialize};
+    /// 
+    /// #[derive(Serialize, Eq, PartialEq, Deserialize, Debug)]
+    /// pub struct Car {
+    ///     model: String,
+    ///     make: String,
+    ///     year: i32
+    /// }
+    /// 
+    /// let mut car_val: Value = json!({"model": "Car model", "make": "Car make", "year": 2019});
+    /// 
+    /// let car2 = Car{
+    ///     model: "Car model".to_string(),
+    ///     make: "Car make".to_string(),
+    ///     year: 2019
+    /// };
+    ///
+    /// if let Some(car1) = car_val.to_struct::<Car>(){
+    ///     assert_eq!(car1, car2);
+    /// }
+    /// ```
+    fn to_struct< T: DeserializeOwned>(self) -> Option<T> {
+        let cast_type: Option<T> = match serde_json::from_value(self) { 
+            Ok(t) => Some(t),
+            _=> {
+                // Returns none if the value could not be properly parsed.
+                None
+            }
+        };
+        cast_type
+    }
+
+    /// Extends a value with another value. If a value contains values with the same keys, the values are combined.
+    /// It can only combine a value of type Map or an array. For a map the new value is appended to the existing 
+    /// value and  for an array the content of the value is appended to the existing array.
+    /// ## Usage
+    /// ```rust
+    /// use serde_json::{Value, from_str};
+    /// use serde_json_utils::JsonUtils;
+    ///
+    /// let mut x: Value = from_str(r###"{"key1": "bar"}"###).unwrap();
+    /// let x_result: Value = from_str(r###"{"key1": "bar", "key2": "foo"}"###).unwrap();
+    ///
+    /// x.extend(from_str(r###"{"key2": "foo"}"###).unwrap());
+    /// assert_eq!(x, x_result);
+    /// ```
+    fn extend(&mut self, mut value: Value) {
+        // Iterate through all the keys
+        if self.is_object() {
+            if value.is_object() {
+                for item in value.as_object().unwrap().iter() { 
+                    self.as_object_mut().unwrap().insert(item.0.clone(), item.1.clone());
+                }
+            } else if value.is_array() {
+                self.as_object_mut().unwrap().insert("items".to_string(), value.clone());
+            }
+        } else if self.is_array() {
+            if value.is_object() {
+                self.as_array_mut().unwrap().push( value.clone());
+            } else if value.is_array() {
+                self.as_array_mut().unwrap().append( value.as_array_mut().unwrap());
+            }
+        }
+    }
 }
 
 

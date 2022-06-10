@@ -1,4 +1,5 @@
-use serde_json::{from_str, Value};
+use serde_json::{from_str, json, Value};
+use serde::{Deserialize, Serialize};
 use crate::{JsonUtils, merge_similar_objects};
 
 const DATA: &str = r###"
@@ -139,18 +140,60 @@ const MERGE_RES4: &str = r###"[
         }]
         "###;
 
-// const MERGE_SRC5: &str = r###"[
-//         {
-//             "key1": "value in here",
-//             "key2": "asas1",
-//             "key3": "value3"
-//         },
-//         {
-//             "key1": "value in here",
-//             "key2": "asas2"
-//         }]
-//         "###;
+const TO_STRUCT: &str = r###"{
+            "model": "car model",
+            "make": "car make",
+            "year": 2019
+        }"###;
 
+const TO_STRUCT2: &str = r###"[
+        {
+            "model": "car model",
+            "make": "car make",
+            "year": 2019
+        },
+        {
+            "model": "car model2",
+            "make": "car make2",
+            "year": 2020
+        }
+        ]"###;
+
+const EXTEND: &str = r###"{
+            "model": "car model",
+            "make": "car make"
+        }"###;
+
+const EXTEND3: &str = r###"{
+            "model": "car model",
+            "make": "car make",
+            "year": 2019
+        }"###;
+
+const EXTEND2: &str = r###"[
+        {
+            "model": "car model",
+            "make": "car make",
+            "year": 2019
+        },
+        {
+            "model": "car model2",
+            "make": "car make2",
+            "year": 2020
+        },
+        {
+            "model": "car model3",
+            "make": "car make3",
+            "year": 2017
+        }
+        ]"###;
+
+#[derive(Deserialize, Serialize, Eq, PartialEq, Clone, Debug)]
+pub struct Car {
+    model: String,
+    make: String,
+    year: i32
+}
 
 #[test]
 fn test_skip_null() {
@@ -213,4 +256,42 @@ fn test_merge_similar(){
     // let res1: Value = from_str(MERGE_SRC5).unwrap();
     // merge_similar(&mut src1);
     // assert_eq!(res1, src1);
+}
+
+#[test]
+fn test_to_struct() {
+    let src1: Value = from_str(TO_STRUCT).unwrap();
+    let car1 = Car{
+        model: "car model".to_string(),
+        make: "car make".to_string(),
+        year: 2019
+    };
+    if let Some(car2) = src1.to_struct::<Car>() {
+        assert_eq!(car1, car2);
+    }
+
+    let src2: Value = from_str(TO_STRUCT2).unwrap();
+    if let Some(cars) = src2.to_struct::<Vec<Car>>(){
+        assert_eq!(cars.len(), 2);
+    }
+}
+
+#[test]
+fn test_extend(){
+    // Test extending an array
+    let src1: Value = from_str(EXTEND2).unwrap();
+    let src2 = json!({
+        "model": "car model3",
+        "make": "car make3",
+        "year": 2017i32
+    });
+    let mut src3 : Value = from_str(TO_STRUCT2).unwrap();
+    src3.extend(src2);
+    assert_eq!(src3, src1);
+    
+    // Test extending an object.
+    let mut src4: Value = from_str(EXTEND).unwrap();
+    let src5 : Value = from_str(EXTEND3).unwrap();
+    src4.extend(json!({"year": 2019i32}));
+    assert_eq!(src4, src5);
 }
