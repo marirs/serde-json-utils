@@ -7,16 +7,92 @@ mod tests;
 mod utils;
 
 pub trait JsonUtils {
+    /// Remove `Null` value fields from serde_json::Value
+    /// ## Example
+    /// ```rust
+    /// use serde_json::{Value, from_str};
+    /// use serde_json_utils::{JsonUtils};
+    ///
+    /// let mut x: Value = from_str(r###"{"key1": null, "key2": "foo"}"###).unwrap();
+    /// let x_result: Value = from_str(r###"{"key2": "foo"}"###).unwrap();
+    ///
+    /// x.skip_null();
+    /// assert_eq!(x, x_result);
+    /// ```
     fn skip_null(&mut self);
-    
+
+    /// Remove `Null` value fields & `empty` value fields from serde_json::Value
+    /// ## Example
+    /// ```rust
+    /// use serde_json::{Value, from_str};
+    /// use serde_json_utils::{JsonUtils};
+    ///
+    /// let mut x: Value = from_str(r###"{"key1": null, "key2": "foo", "key3": [], "key4": {}}"###).unwrap();
+    /// let x_result: Value = from_str(r###"{"key2": "foo"}"###).unwrap();
+    ///
+    /// x.skip_null_and_empty();
+    /// assert_eq!(x, x_result);
+    /// ```
     fn skip_null_and_empty(&mut self);
-    
+
+    /// `Dedup` array of json's from serde_json::Value
+    /// ## Example
+    /// ```rust
+    /// use serde_json::{Value, from_str};
+    /// use serde_json_utils::{JsonUtils};
+    ///
+    /// let mut x: Value = from_str(r###"[{"key1": "foo", "key2": "bar", "key3": [1, 1, 2]}, {"key1": "foo", "key2": "bar", "key3": [1, 1, 2]}]"###).unwrap();
+    /// let x_result: Value = from_str(r###"[{"key1": "foo", "key2": "bar", "key3": [1, 2]}]"###).unwrap();
+    ///
+    /// x.dedup();
+    /// assert_eq!(x, x_result);
+    /// ```
     fn dedup(&mut self);
     
     fn merge_similar(&mut self);
-    
+
+    /// Converts a Value to a Struct of the provided type. The provided struct must implement the `serde::Deserialize` trait.
+    /// ## Usage
+    /// ```rust
+    /// use serde_json::{json, Value};
+    /// use serde_json_utils::JsonUtils;
+    /// use serde::{Deserialize, Serialize};
+    ///
+    /// #[derive(Serialize, Eq, PartialEq, Deserialize, Debug)]
+    /// pub struct Car {
+    ///     model: String,
+    ///     make: String,
+    ///     year: i32
+    /// }
+    ///
+    /// let mut car_val: Value = json!({"model": "Car model", "make": "Car make", "year": 2019});
+    ///
+    /// let car2 = Car{
+    ///     model: "Car model".to_string(),
+    ///     make: "Car make".to_string(),
+    ///     year: 2019
+    /// };
+    ///
+    /// if let Some(car1) = car_val.to_struct::<Car>(){
+    ///     assert_eq!(car1, car2);
+    /// }
+    /// ```
     fn to_struct<T: DeserializeOwned>(self) -> Option<T>;
-    
+
+    /// Extends a value with another value. If a value contains values with the same keys, the values are combined.
+    /// It can only combine a value of type Map or an array. For a map the new value is appended to the existing 
+    /// value and  for an array the content of the value is appended to the existing array.
+    /// ## Usage
+    /// ```rust
+    /// use serde_json::{Value, from_str};
+    /// use serde_json_utils::JsonUtils;
+    ///
+    /// let mut x: Value = from_str(r###"{"key1": "bar"}"###).unwrap();
+    /// let x_result: Value = from_str(r###"{"key1": "bar", "key2": "foo"}"###).unwrap();
+    ///
+    /// x.extend(from_str(r###"{"key2": "foo"}"###).unwrap());
+    /// assert_eq!(x, x_result);
+    /// ```
     fn extend(&mut self, value: Value);
 }
 
@@ -177,30 +253,40 @@ impl JsonUtils for Value {
     /// x.extend(from_str(r###"{"key2": "foo"}"###).unwrap());
     /// assert_eq!(x, x_result);
     /// ```
-    fn extend(&mut self, mut value: Value) {
+    fn extend(&mut self, value: Value) {
         // Iterate through all the keys
-        if self.is_object() {
-            if value.is_object() {
-                for item in value.as_object().unwrap().iter() { 
-                    self.as_object_mut().unwrap().insert(item.0.clone(), item.1.clone());
+        match self {
+            Object(o) => {
+                match value {
+                    Object(t) => {
+                        for item in t {
+                            o.insert(item.0.clone(), item.1.clone());
+                        }
+                    },
+                    Array(t) => {
+                        o.insert("items".to_string(), Value::from(t));
+                    },
+                    _ => {}
                 }
-            } else if value.is_array() {
-                self.as_object_mut().unwrap().insert("items".to_string(), value.clone());
-            }
-        } else if self.is_array() {
-            if value.is_object() {
-                self.as_array_mut().unwrap().push( value.clone());
-            } else if value.is_array() {
-                self.as_array_mut().unwrap().append( value.as_array_mut().unwrap());
-            }
-        }
+            },
+            Array(o) => {
+                match value {
+                    Object(t) => { o.push(Value::from(t)) },
+                    Array(mut t) => {
+                        o.append(&mut t);
+                    },
+                    _ => {}
+                }
+            },
+            _=> {}
+        };
     }
 }
 
 
 
 /// Remove `Null` value fields & `empty` value fields from serde_json::Value
-pub fn remove_nulls(val: &mut Value, with_empties: bool) -> bool {
+fn remove_nulls(val: &mut Value, with_empties: bool) -> bool {
     match val {
         Null => {
             return true;
@@ -240,7 +326,7 @@ pub fn remove_nulls(val: &mut Value, with_empties: bool) -> bool {
 }
 
 /// merge similar objects
-pub fn merge_similar_objects(p: &Value, v: &Value) -> Result<Value, ()> {
+fn merge_similar_objects(p: &Value, v: &Value) -> Result<Value, ()> {
     match (p, v) {
         (Object(a), Object(b)) => {
             if HashValue(p.clone()) != HashValue(v.clone()) {
